@@ -796,6 +796,10 @@ async function restoreBackup(backupData) {
         return false;
     }
 
+    // 从 backupData 中获取 entityName 和 chatName
+    const originalEntityName = backupData.entityName || '未知实体';
+    const originalChatName = backupData.chatName || '未知聊天';
+
     // 提取原始实体ID
     const isGroupBackup = backupData.chatKey.startsWith('group_');
     let originalEntityId = null;
@@ -825,26 +829,18 @@ async function restoreBackup(backupData) {
     if (typeof retrievedChatMetadata !== 'object' || !Array.isArray(retrievedChat)) {
         toastr.error('备份数据格式错误：无法分离元数据和消息。', '恢复失败');
         console.error('[聊天自动备份] 备份数据 chatFileContent 格式错误。');
-             return false;
-        }
-    logDebug(`[聊天自动备份] 从备份中提取元数据 (keys: ${Object.keys(retrievedChatMetadata).length}) 和消息 (count: ${retrievedChat.length})`);
-
-    // --- 1. 确认操作 ---
-    const confirmMessage = `确定要恢复 "${originalEntityName} - ${originalChatName}" 的备份吗？\n\n` +
-                           `这将尝试将备份的聊天记录导入到对应的角色/群组中，并作为【一个新的聊天会话】。\n\n` +
-                           `请确保对应的角色/群组是您希望恢复到的目标。`;
-
-    if (!confirm(confirmMessage)) {
-        logDebug('[聊天自动备份] 用户取消恢复操作。');
         return false;
     }
+    logDebug(`[聊天自动备份] 从备份中提取元数据 (keys: ${Object.keys(retrievedChatMetadata).length}) 和消息 (count: ${retrievedChat.length})`);
+
+    // 注意: 移除多余的确认对话框，因为确认已在外部UI事件处理中完成
 
     // --- 2. 构建 .jsonl File 对象 ---
     logDebug('[聊天自动备份] 步骤2: 构建 .jsonl File 对象...');
     const jsonlString = constructJsonlString(retrievedChatMetadata, retrievedChat);
     if (!jsonlString) {
         toastr.error('无法构建 .jsonl 数据，恢复中止。', '恢复失败');
-                return false;
+        return false;
     }
 
     const timestampSuffix = new Date(backupData.timestamp).toISOString().replace(/[:.]/g, '-');
@@ -1313,6 +1309,27 @@ jQuery(async () => {
                         
                         // 过滤标签并处理Markdown
                         const processMessage = (messageText) => {
+                            // 确保 messageText 是字符串类型
+                            if (typeof messageText !== 'string') {
+                                if (messageText === null || messageText === undefined) {
+                                    return '(空消息)';
+                                }
+                                
+                                // 如果 messageText 是对象，尝试从中提取 mes 属性
+                                if (typeof messageText === 'object' && messageText !== null) {
+                                    if (typeof messageText.mes === 'string') {
+                                        messageText = messageText.mes;
+                                    } else {
+                                        console.warn(`[聊天自动备份] processMessage 收到非字符串类型的消息:`, messageText);
+                                        messageText = String(messageText); // 尝试转换为字符串
+                                    }
+                                } else {
+                                    // 其他非字符串类型
+                                    console.warn(`[聊天自动备份] processMessage 收到非字符串类型的消息:`, messageText);
+                                    messageText = String(messageText); // 尝试转换为字符串
+                                }
+                            }
+                            
                             if (!messageText) return '(空消息)';
                             
                             // 过滤<think>和<thinking>标签及其内容
@@ -1329,7 +1346,7 @@ jQuery(async () => {
                             processed = processed
                                 .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')  // 粗体
                                 .replace(/\*(.*?)\*/g, '<em>$1</em>')              // 斜体
-                                .replace(/\n\n+/g, '\n')                           // 多个连续换行替换为两个
+                                .replace(/\n\n+/g, '\n')                           // 多个连续换行替换为单个
                                 .replace(/\n/g, '<br>');                           // 换行
                             
                             return processed;
@@ -1370,7 +1387,8 @@ jQuery(async () => {
                         lastMessages.forEach((msg, index) => {
                             const messageDiv = document.createElement('div');
                             messageDiv.className = `message_box ${index % 2 === 0 ? 'user_message' : 'assistant_message'}`;
-                            messageDiv.innerHTML = processMessage(msg);
+                            // 检查消息格式并访问正确的属性
+                            messageDiv.innerHTML = processMessage(msg.mes || msg);
                             previewContainer.appendChild(messageDiv);
                         });
                         
