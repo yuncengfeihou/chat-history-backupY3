@@ -1280,9 +1280,8 @@ jQuery(async () => {
             const timestamp = parseInt(button.data('timestamp'));
             const chatKey = button.data('key');
             logDebug(`点击预览按钮, timestamp: ${timestamp}, chatKey: ${chatKey}`);
-
             button.prop('disabled', true).text('加载中...'); // 禁用按钮并显示状态
-
+            
             try {
                 const db = await getDB();
                 const backup = await new Promise((resolve, reject) => {
@@ -1306,118 +1305,89 @@ jQuery(async () => {
 
                 if (backup && backup.chatFileContent && Array.isArray(backup.chatFileContent) && backup.chatFileContent.length > 1) {
                     // 提取消息 (跳过索引0的元数据)
-                    const messages = backup.chatFileContent.slice(1); 
+                    const messages = backup.chatFileContent.slice(1);
                     
                     if (messages.length > 0) {
-                    // 获取最后两条消息
+                        // 获取最后两条消息
                         const lastMessages = messages.slice(-2);
-                    
-                    // 过滤标签并处理Markdown
-                    const processMessage = (messageText) => {
-                        if (!messageText) return '(空消息)';
                         
-                        // 过滤<think>和<thinking>标签及其内容
-                        let processed = messageText
-                            .replace(/<think>[\s\S]*?<\/think>/g, '')
-                            .replace(/<thinking>[\s\S]*?<\/thinking>/g, '');
+                        // 过滤标签并处理Markdown
+                        const processMessage = (messageText) => {
+                            if (!messageText) return '(空消息)';
+                            
+                            // 过滤<think>和<thinking>标签及其内容
+                            let processed = messageText
+                                .replace(/<think>[\s\S]*?<\/think>/g, '')
+                                .replace(/<thinking>[\s\S]*?<\/thinking>/g, '');
+                            
+                            // 过滤代码块和白毛控名称
+                            processed = processed
+                                .replace(/```[\s\S]*?```/g, '')    // 移除代码块
+                                .replace(/`[\s\S]*?`/g, '');       // 移除内联代码
+                            
+                            // 简单的Markdown处理，保留部分格式
+                            processed = processed
+                                .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')  // 粗体
+                                .replace(/\*(.*?)\*/g, '<em>$1</em>')              // 斜体
+                                .replace(/\n\n+/g, '\n')                           // 多个连续换行替换为两个
+                                .replace(/\n/g, '<br>');                           // 换行
+                            
+                            return processed;
+                        };
                         
-                        // 过滤代码块和白毛控名称
-                        processed = processed
-                            .replace(/```[\s\S]*?```/g, '')    // 移除代码块
-                            .replace(/`[\s\S]*?`/g, '');       // 移除内联代码
+                        // 创建样式
+                        const style = document.createElement('style');
+                        style.textContent = `
+                            .message_box {
+                                padding: 10px;
+                                margin-bottom: 10px;
+                                border-radius: 8px;
+                                max-width: 80%;
+                            }
+                            .user_message {
+                                background-color: #e1f5fe;
+                                margin-left: auto;
+                            }
+                            .assistant_message {
+                                background-color: #f5f5f5;
+                                margin-right: auto;
+                            }
+                            .preview_container {
+                                display: flex;
+                                flex-direction: column;
+                                padding: 10px;
+                                max-height: 400px;
+                                overflow-y: auto;
+                            }
+                        `;
+                        document.head.appendChild(style);
                         
-                        // 简单的Markdown处理，保留部分格式
-                        processed = processed
-                            .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')  // 粗体
-                            .replace(/\*(.*?)\*/g, '<em>$1</em>')              // 斜体
-                            .replace(/\n\n+/g, '\n')                         // 多个连续换行替换为两个
-                            .replace(/\n/g, '<br>');                           // 换行
+                        // 创建预览容器
+                        const previewContainer = document.createElement('div');
+                        previewContainer.className = 'preview_container';
                         
-                        return processed;
-                    };
-                    
-                    // 创建样式
-                    const style = document.createElement('style');
-                    style.textContent = `
-                        .message_box {
-                            padding: 10px;
-                            margin-bottom: 10px;
-                            border-radius: 8px;
-                            background: rgba(0, 0, 0, 0.15);
-                        }
-                        .message_sender {
-                            font-weight: bold;
-                            margin-bottom: 5px;
-                            color: var(--SmColor);
-                        }
-                        .message_content {
-                            white-space: pre-wrap;
-                            line-height: 1.4;
-                        }
-                        .message_content br + br {
-                            margin-top: 0.5em;
-                        }
-                    `;
-                    
-                    // 创建预览内容
-                    const previewContent = document.createElement('div');
-                    previewContent.appendChild(style);
-                    
-                    const headerDiv = document.createElement('h3');
-                    headerDiv.textContent = `${backup.entityName} - ${backup.chatName} 预览`;
-                    previewContent.appendChild(headerDiv);
-                    
-                    const contentDiv = document.createElement('div');
-                    
-                    // 为每条消息创建单独的盒子
-                    lastMessages.forEach(msg => {
-                        const messageBox = document.createElement('div');
-                        messageBox.className = 'message_box';
+                        // 添加消息
+                        lastMessages.forEach((msg, index) => {
+                            const messageDiv = document.createElement('div');
+                            messageDiv.className = `message_box ${index % 2 === 0 ? 'user_message' : 'assistant_message'}`;
+                            messageDiv.innerHTML = processMessage(msg);
+                            previewContainer.appendChild(messageDiv);
+                        });
                         
-                        const senderDiv = document.createElement('div');
-                        senderDiv.className = 'message_sender';
-                        senderDiv.textContent = msg.name || '未知';
-                        
-                        const contentDiv = document.createElement('div');
-                        contentDiv.className = 'message_content';
-                        contentDiv.innerHTML = processMessage(msg.mes);
-                        
-                        messageBox.appendChild(senderDiv);
-                        messageBox.appendChild(contentDiv);
-                        
-                        previewContent.appendChild(messageBox);
-                    });
-                    
-                    const footerDiv = document.createElement('div');
-                    footerDiv.style.marginTop = '10px';
-                    footerDiv.style.opacity = '0.7';
-                    footerDiv.style.fontSize = '0.9em';
-                        footerDiv.textContent = `显示最后 ${lastMessages.length} 条消息，共 ${messages.length} 条`;
-                    previewContent.appendChild(footerDiv);
-                    
-                    // 导入对话框系统
-                    const { callGenericPopup, POPUP_TYPE } = await import('../../../popup.js');
-                    
-                    // 使用系统弹窗显示预览内容
-                    await callGenericPopup(previewContent, POPUP_TYPE.DISPLAY, '', {
-                        wide: true,
-                        allowVerticalScrolling: true,
-                        leftAlign: true,
-                        okButton: '关闭'
-                    });
-                    
+                        // 显示预览
+                        const previewModal = document.createElement('div');
+                        previewModal.className = 'preview_modal';
+                        previewModal.appendChild(previewContainer);
+                        document.body.appendChild(previewModal);
+                    }
                 } else {
-                        toastr.info('此备份中没有消息可供预览。');
+                    alert('无法加载预览内容或备份格式不正确');
                 }
             } catch (error) {
-                console.error('[聊天自动备份] 预览过程中出错:', error);
-                toastr.error(`预览过程中出错: ${error.message}`);
+                console.error('预览备份时出错:', error);
+                alert('预览备份时出错: ' + error.message);
             } finally {
-                button.prop('disabled', false).text('预览'); // 恢复按钮状态
-                }
-            } else {
-                console.error('[聊天自动备份] 找不到指定的备份或备份为空/格式错误:', { timestamp, chatKey });
-                toastr.error('找不到指定的备份或备份为空/格式错误');
+                button.prop('disabled', false).text('预览');
             }
         });
 
